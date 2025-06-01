@@ -4,7 +4,9 @@ This is an iPhone using Agent that uses OpenAI models to get things done on a ph
 
 # Demo
 
-<Link to video>
+<video src="demo.MOV" controls width="600">
+  Your browser can’t play this video – <a href="demo.MOV">download it instead</a>.
+</video>
 
 # What you can do
 Example prompts:
