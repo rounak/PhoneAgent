@@ -56,7 +56,11 @@ extension PhoneAgent {
                     try await enterText(rect: coordinate, text: text)
                 case .openApp(let bundleIdentifier):
                     let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
-                    app.activate()
+                    if bundleIdentifier == "com.apple.springboard" {
+                        app.activate() // Avoid relaunching springboard since that locks the phone
+                    } else {
+                        app.launch()
+                    }
                     self.app = app
                 case let .scroll(x: x, y:y, distanceX: distanceX, distanceY: distanceY):
                     try scroll(x: x, y: y, distanceX: distanceX, distanceY: distanceY)

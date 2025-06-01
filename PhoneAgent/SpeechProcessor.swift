@@ -16,6 +16,7 @@ final class SpeechProcessor {
     // Published state
     var transcript: String = ""
     var isRecording: Bool = false
+    private var inactivityTask: Task<Void, Never>? 
 
     // Private speech objects
     private let audioEngine = AVAudioEngine()
@@ -24,8 +25,11 @@ final class SpeechProcessor {
     private let speechRecognizer = SFSpeechRecognizer(locale: .current)
 
     // Silence detection
-    private var inactivityTask: Task<Void, Never>?
     private let silenceInterval: TimeInterval = 1.5 // seconds of no updates that count as silence
+
+    // Tracking delivered speech
+    private var deliveredSegmentIndex: Int = 0
+    private var lastSegmentsCount: Int = 0
 
     @ObservationIgnored
     @AppStorage("alwaysOn") private var alwaysOn = false
@@ -83,6 +87,7 @@ final class SpeechProcessor {
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         streamPair.continuation.yield(text)
+        deliveredSegmentIndex = lastSegmentsCount
         transcript = ""
     }
 
@@ -118,6 +123,9 @@ final class SpeechProcessor {
 
     @MainActor
     private func startRecognition() throws {
+        deliveredSegmentIndex = 0
+        lastSegmentsCount = 0
+
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         recognitionRequest?.shouldReportPartialResults = true
 
@@ -135,11 +143,21 @@ final class SpeechProcessor {
             guard let self else { return }
 
             if let result {
-                self.transcript = result.bestTranscription.formattedString
+                let segments = result.bestTranscription.segments
+                self.lastSegmentsCount = segments.count
+
+                if segments.count > self.deliveredSegmentIndex {
+                    let newSegments = segments[self.deliveredSegmentIndex...]
+                    self.transcript = newSegments.map(\.substring).joined(separator: " ")
+                } else {
+                    self.transcript = ""
+                }
+
                 // Each partial update resets the silence timer.
                 self.resetInactivityTimer()
 
                 if result.isFinal {
+                    self.deliveredSegmentIndex = segments.count
                     self.stop()
                 }
             }

@@ -297,7 +297,7 @@ extension Tool {
                               """
                               The bundle identifier of the iOS app to open. Some common iOS apps: 
                               System Settings = com.apple.Preferences
-                              Instagram = com.burbn.instagram
+                              Camera = com.apple.camera
                               Photos = com.apple.mobileslideshow
                               Messages = com.apple.MobileSMS
                               Home Screen = com.apple.springboard
