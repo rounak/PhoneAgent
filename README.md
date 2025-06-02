@@ -4,7 +4,7 @@ This is an iPhone using Agent that uses OpenAI models to get things done on a ph
 
 # Demo
 
-https://www.youtube.com/shorts/4rnv6dN-2Lg
+[![image](https://github.com/user-attachments/assets/61459ad3-07c8-4d05-8e79-d0f5c5f11b11)](https://www.youtube.com/shorts/4rnv6dN-2Lg)
 
 # What you can do
 Example prompts:
