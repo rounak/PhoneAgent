@@ -46,6 +46,7 @@ The host app communicates with the UI test via a TCP Server to trigger prompts.
 - Keyboard input can be improved
 - Capturing the view hierarchy while an animation is inflight confuses the model
 - The model doesn't wait for long running tasks to complete, so it might give up prematurely.
+- The model doesn't see an image representation of the screen yet, but it's possible to do it via XCTest APIs.
 
 # Disclaimer
 - This is experimental software
