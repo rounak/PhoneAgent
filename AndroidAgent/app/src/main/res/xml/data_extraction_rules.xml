@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- TODO: Define what data can be extracted.
+         For more information, see https://developer.android.com/guide/topics/data/copy-extract
+    -->
+</data-extraction-rules>
