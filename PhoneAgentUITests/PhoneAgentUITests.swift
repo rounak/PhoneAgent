@@ -11,9 +11,9 @@ final class PhoneAgent: XCTestCase {
     let appListener = AppStreamListener()
     var task: Task<Void, Never>?
 
-    var api: OpenAIService?
+    var api: GeminiService?
     let notificationCenter = UNUserNotificationCenter.current()
-    var lastRequest: OpenAIRequest?
+    var lastRequest: GeminiRequest?
     var app: XCUIApplication?
 
     override func setUpWithError() throws {
@@ -31,7 +31,7 @@ final class PhoneAgent: XCTestCase {
         for await prompt in appListener.messages {
             switch prompt {
             case .apiKey(let apiKey):
-                api = OpenAIService(with: apiKey)
+                api = GeminiService(with: apiKey)
             case .prompt(let prompt):
                 guard task == nil || task?.isCancelled == false else { continue }
                 task = Task {
@@ -94,10 +94,10 @@ final class PhoneAgent: XCTestCase {
           "previous_response_id": "resp_683b49b0916c819b9db77fc68c0ed429016e90871fbf8114",
         }
         """
-        let response = try JSONDecoder.shared.decode(Response.self, from: .init(rawResponse.utf8))
+        let response = try JSONDecoder.shared.decode(GeminiResponse.self, from: .init(rawResponse.utf8))
         XCTAssertEqual(
             response,
-            Response(
+            GeminiResponse(
                 id: "resp_683b49b0916c819b9db77fc68c0ed429016e90871fbf8114",
                 output: [.functionCall(
                             id:  "call_VduQZcKYvlyfrY5SINGzVrTd",

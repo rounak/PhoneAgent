@@ -28,65 +28,148 @@ extension PhoneAgent {
 
     @MainActor
     func submit(_ prompt: String) async throws {
-        try await recurse(with: OpenAIRequest(with: prompt, accessibilityTree: app.map { $0.accessibilityTree() }))
+        try await recurse(with: GeminiRequest(with: prompt, accessibilityTree: app.map { $0.accessibilityTree() }))
     }
 
     @MainActor
-    private func recurse(with request: OpenAIRequest) async throws {
+    private func recurse(with request: GeminiRequest) async throws {
         guard let api else {
             throw Error.apiNotConfigured
         }
-        var request = request
-        let response = try await api.send(request)
-        guard let last = response.output.last else { fatalError("No response received.") }
-        print("Received message \(last)")
-        request.input = []
-        request.previousResponseID = response.id
-        lastRequest = request
-        let output: String
-        switch last {
-        case .functionCall(let id, let functionCall):
-            do {
-                switch functionCall {
-                case let .tapElement(coordinate, count, longPress):
-                    try tapElement(rect: coordinate, count: count, longPress: longPress)
-                case .fetchAccessibilityTree:
-                    print("Getting current accessibility tree")
-                case let .enterText(coordinate, text):
-                    try await enterText(rect: coordinate, text: text)
-                case .openApp(let bundleIdentifier):
-                    let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
-                    if bundleIdentifier == "com.apple.springboard" {
-                        app.activate() // Avoid relaunching springboard since that locks the phone
-                    } else {
-                        app.launch()
+
+        // Make a mutable copy of the request to potentially add conversation history for recursion
+        var currentRequest = request
+        let response = try await api.send(currentRequest)
+
+        // Process candidates from GeminiResponse
+        guard let candidate = response.candidates?.first else {
+            print("No candidates found in Gemini response.")
+            // Consider sending a notification or handling this error appropriately
+            return
+        }
+
+        guard let candidateContent = candidate.content else {
+            print("No content found in Gemini candidate.")
+            // Consider sending a notification or handling this error appropriately
+            return
+        }
+
+        // It's important to update lastRequest with the request *before* it's modified for the next turn.
+        // However, if the next turn is a function response, the conversation history needs to be preserved.
+        // Let's update lastRequest to reflect the state that led to the current response.
+        lastRequest = currentRequest
+
+        for part in candidateContent.parts {
+            if let text = part.text {
+                print("Received text message: \(text)")
+                // This is like the old .message case
+                Task {
+                    do {
+                        try await sendNotification(message: text)
+                    } catch {
+                        print("Error sending notification: \(error)")
                     }
-                    self.app = app
-                case let .scroll(x: x, y:y, distanceX: distanceX, distanceY: distanceY):
-                    try scroll(x: x, y: y, distanceX: distanceX, distanceY: distanceY)
-                case let .swipe(x: x, y: y, direction: direction):
-                    try swipe(x: x, y: y, direction: direction)
                 }
-                guard let app else {
-                    throw Error.noAppFound
-                }
-                output = app.accessibilityTree()
-            } catch {
-                output = "Error executing function call: \(error.localizedDescription)"
-            }
-            request.input.append(.functionCallOutput(id, output: output))
-            try await recurse(with: request)
-        case .message(let message):
-            Task {
+                // Typically, if the model sends text, it's the end of this turn of interaction.
+                // No immediate recursion with new data unless waiting for user reply (handled by handleQuickReply).
+            } else if let functionCall = part.functionCall {
+                print("Received function call: \(functionCall.name) with args: \(functionCall.args ?? [:])")
+                let functionNameString = functionCall.name
+                let args = functionCall.args ?? [:]
+                var output: String
+
                 do {
-                    try await sendNotification(message: message.content.first { $0.type == .outputText }?.text ?? "Completed")
+                    var declaredFunctionCall: GeminiDeclaredFunctionCall?
+                    // Reconstruct GeminiDeclaredFunctionCall from functionCall.name and functionCall.args
+                    if functionNameString == GeminiFunctionName.enterText.rawValue {
+                        let coordinate = args["coordinate"] ?? ""
+                        let textToEnter = args["text"] ?? ""
+                        declaredFunctionCall = .enterText(coordinate: coordinate, text: textToEnter)
+                    } else if functionNameString == GeminiFunctionName.fetchAccessibilityTree.rawValue {
+                        declaredFunctionCall = .fetchAccessibilityTree
+                    } else if functionNameString == GeminiFunctionName.openApp.rawValue {
+                        let bundleIdentifier = args["bundle_identifier"] ?? ""
+                        declaredFunctionCall = .openApp(bundleIdentifier: bundleIdentifier)
+                    } else if functionNameString == GeminiFunctionName.tapElement.rawValue {
+                        let coordinate = args["coordinate"] ?? ""
+                        // Assuming count and longPress might be missing or need type conversion
+                        let count = args["count"].flatMap { Int($0) }
+                        let longPress = args["longPress"].flatMap { Bool($0) }
+                        declaredFunctionCall = .tapElement(coordinate: coordinate, count: count, longPress: longPress)
+                    } else if functionNameString == GeminiFunctionName.scroll.rawValue {
+                        let x = args["x"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.0
+                        let y = args["y"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.0
+                        let distanceX = args["distanceX"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.0
+                        let distanceY = args["distanceY"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.0
+                        declaredFunctionCall = .scroll(x: x, y: y, distanceX: distanceX, distanceY: distanceY)
+                    } else if functionNameString == GeminiFunctionName.swipe.rawValue {
+                        let x = args["x"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.0
+                        let y = args["y"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.0
+                        let direction = args["direction"].flatMap { SwipeDirection(rawValue: $0) } ?? .down // Default if missing/invalid
+                        declaredFunctionCall = .swipe(x: x, y: y, direction: direction)
+                    } else {
+                        throw Error.invalidTool(name: functionNameString, message: "Unknown function name.")
+                    }
+
+                    guard let validFunctionCall = declaredFunctionCall else {
+                        throw Error.invalidTool(name: functionNameString, message: "Could not reconstruct declared function call.")
+                    }
+
+                    // Execute the function call using the existing logic but with GeminiDeclaredFunctionCall
+                    switch validFunctionCall {
+                    case let .tapElement(coordinate, count, longPress):
+                        try tapElement(rect: coordinate, count: count, longPress: longPress)
+                    case .fetchAccessibilityTree:
+                        print("Getting current accessibility tree")
+                    case let .enterText(coordinate, text):
+                        try await enterText(rect: coordinate, text: text)
+                    case .openApp(let bundleIdentifier):
+                        let appToOpen = XCUIApplication(bundleIdentifier: bundleIdentifier)
+                        if bundleIdentifier == "com.apple.springboard" {
+                            appToOpen.activate()
+                        } else {
+                            appToOpen.launch()
+                        }
+                        self.app = appToOpen // Update the reference to the current app
+                    case let .scroll(x, y, distanceX, distanceY):
+                        try scroll(x: x, y: y, distanceX: distanceX, distanceY: distanceY)
+                    case let .swipe(x, y, direction):
+                        try swipe(x: x, y: y, direction: direction)
+                    }
+                    guard let app = self.app else { // Ensure self.app is used
+                        throw Error.noAppFound
+                    }
+                    output = app.accessibilityTree()
                 } catch {
-                    print(error)
+                    output = "Error executing function call: \(error.localizedDescription)"
                 }
+
+                // Prepare for the next recurse call by sending the function response
+                let funcResponseData = GeminiFunctionResponseData(output: ["result": output]) // name is part of GeminiFunctionResponsePart
+                let partResponse = GeminiPart(functionResponse: GeminiFunctionResponsePart(name: functionNameString, response: funcResponseData))
+                let toolResponseContent = GeminiContent(role: "tool", parts: [partResponse])
+
+                var nextRequest = currentRequest // Start with the current request to preserve history
+                nextRequest.contents.append(toolResponseContent) // Add the tool's response
+
+                // lastRequest should reflect the state *before* this tool response is added,
+                // so handleQuickReply can correctly append a user message to that state.
+                // However, the recursive call *needs* the tool response.
+                // This means handleQuickReply should probably use the 'request' passed to recurse,
+                // before it's augmented with the tool response.
+                // For now, lastRequest was set before this loop.
+
+                try await recurse(with: nextRequest)
+
+            } else if let _ = part.functionResponse {
+                // This case handles when Gemini sends back a functionResponse.
+                // Generally, the model would follow up with text or another function call.
+                // If this part is hit, it means the model just confirmed our function execution result.
+                // We might not need to do anything specific here unless the next part (or next candidate) has further instructions.
+                print("Received function response confirmation from model (should not happen based on current flow): \(part.functionResponse!)")
             }
         }
     }
-
 }
 
 // Tools
@@ -223,18 +306,23 @@ extension PhoneAgent: UNUserNotificationCenterDelegate {
     }
 
     func handleQuickReply(text: String) {
-        guard var lastRequest else {
-            print("No last request found.")
+        guard var requestForReply = lastRequest else { // Use lastRequest which reflects the state before the previous model response processing.
+            print("No lastRequest found to handle quick reply.")
             return
         }
-        lastRequest.input = [
-            .user(text)
-        ]
+
+        // Append the user's new text as a new user content part.
+        let userReplyContent = GeminiContent(role: "user", parts: [GeminiPart(text: text)])
+        requestForReply.contents.append(userReplyContent)
+
+        // The `lastRequest` should now be this new state before calling recurse again.
+        lastRequest = requestForReply
+
         Task {
             do {
-                try await recurse(with: lastRequest)
+                try await recurse(with: requestForReply)
             } catch {
-                print(error)
+                print("Error handling quick reply: \(error)")
             }
         }
     }
