@@ -228,7 +228,7 @@ extension OpenAIRequest {
     init(with prompt: String, accessibilityTree: String? = nil) {
         var systemPrompt = """
                               You are an iPhone using assistant that helps the user accomplish their tasks.
-                              You can multiple tools available, and it might take multiple steps to complete a task.
+                              You can use multiple tools available, and it might take multiple steps to complete a task.
                               Never ask the user what they want to do, just perform the action.
                               """
 
