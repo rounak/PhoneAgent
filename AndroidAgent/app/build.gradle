@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.example.androidagent'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.androidagent"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    buildFeatures {
+        viewBinding true // Or dataBinding true if preferred
+        // compose true // Uncomment if planning to use Jetpack Compose
+    }
+    // composeOptions { // Uncomment if planning to use Jetpack Compose
+    //     kotlinCompilerExtensionVersion '1.5.2' // Use appropriate version
+    // }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+
+    // Navigation Component
+    implementation 'androidx.navigation:navigation-fragment-ktx:2.7.6' // Use latest stable version
+    implementation 'androidx.navigation:navigation-ui-ktx:2.7.6'     // Use latest stable version
+
+    // Dependencies for Gemini API (HTTP client - Ktor)
+    implementation "io.ktor:ktor-client-core:2.3.7"
+    implementation "io.ktor:ktor-client-android:2.3.7"
+    implementation "io.ktor:ktor-client-content-negotiation:2.3.7"
+    implementation "io.ktor:ktor-serialization-kotlinx-json:2.3.7"
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3' // For coroutines
+
+
+    // For speech recognition
+    // implementation 'androidx.speech:speech:1.0.0-alpha01' // Check for latest/stable
+}
