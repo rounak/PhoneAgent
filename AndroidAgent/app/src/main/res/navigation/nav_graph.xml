@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/enterAPIKeyFragment">
+
+    <fragment
+        android:id="@+id/enterAPIKeyFragment"
+        android:name="com.example.androidagent.EnterAPIKeyFragment"
+        android:label="Enter API Key"
+        tools:layout="@layout/fragment_enter_api_key">
+        <action
+            android:id="@+id/action_enterAPIKeyFragment_to_promptFragment"
+            app:destination="@id/promptFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/promptFragment"
+        android:name="com.example.androidagent.PromptFragment"
+        android:label="Prompt"
+        tools:layout="@layout/fragment_prompt">
+        <action
+            android:id="@+id/action_promptFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.example.androidagent.SettingsFragment"
+        android:label="Settings"
+        tools:layout="@layout/fragment_settings" />
+</navigation>
