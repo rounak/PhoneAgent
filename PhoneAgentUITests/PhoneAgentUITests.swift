@@ -33,8 +33,9 @@ final class PhoneAgent: XCTestCase {
             case .apiKey(let apiKey):
                 api = OpenAIService(with: apiKey)
             case .prompt(let prompt):
-                guard task == nil || task?.isCancelled == false else { continue }
+                let previousTask = task
                 task = Task {
+                    _ = await previousTask?.result
                     do {
                         try await submit(prompt)
                     } catch {

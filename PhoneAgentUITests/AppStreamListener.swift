@@ -17,7 +17,9 @@ public enum AppToTestMessage: Codable {
 class AppStreamListener {
     typealias AsyncMessageStream = AsyncStream<AppToTestMessage>
     private let listener: NWListener
+    private let listenerQueue = DispatchQueue(label: "PhoneAgent.AppStreamListener")
     private var connections: [NWConnection] = []
+    private var receiveBuffers: [ObjectIdentifier: Data] = [:]
     public let messages: AsyncMessageStream
     private let continuation: AsyncMessageStream.Continuation
     private let port: NWEndpoint.Port = 12345
@@ -40,36 +42,61 @@ class AppStreamListener {
             print("Server state: \(newState)")
         }
 
-        listener.newConnectionHandler = { [weak self] (newConnection) in
-            self?.connections.append(newConnection)
-            self?.setupReceive(on: newConnection)
-            newConnection.start(queue: .main)
+        listener.newConnectionHandler = { [weak self] newConnection in
+            guard let self else { return }
+            self.connections.append(newConnection)
+            self.receiveBuffers[ObjectIdentifier(newConnection)] = Data()
+            newConnection.start(queue: self.listenerQueue)
+            self.setupReceive(on: newConnection)
             print("Server accepted connection from \(String(describing: newConnection.endpoint))")
         }
 
-        listener.start(queue: .main)
+        listener.start(queue: listenerQueue)
     }
 
     let decoder = JSONDecoder()
 
     private func setupReceive(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] (data, _, isComplete, error) in
-            if let data, !data.isEmpty, let message = try? self?.decoder.decode(AppToTestMessage.self, from: data) {
-                // Publish the message via async sequence
-                self?.continuation.yield(message)
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
+            guard let self else { return }
+            let connectionID = ObjectIdentifier(connection)
+
+            if let data, !data.isEmpty {
+                self.consumeBufferedMessages(data, for: connectionID)
             }
+
             if isComplete {
-                connection.cancel()
-                self?.continuation.finish()
-                self?.connections.removeAll { $0 === connection }
+                self.cleanupConnection(connection, id: connectionID)
             } else if let error = error {
                 print("Server error: \(error)")
-                connection.cancel()
-                self?.continuation.finish()
-                self?.connections.removeAll { $0 === connection }
+                self.cleanupConnection(connection, id: connectionID)
             } else {
-                self?.setupReceive(on: connection)
+                self.setupReceive(on: connection)
             }
         }
+    }
+
+    private func consumeBufferedMessages(_ incomingData: Data, for connectionID: ObjectIdentifier) {
+        var buffer = receiveBuffers[connectionID, default: Data()]
+        buffer.append(incomingData)
+
+        while let newlineIndex = buffer.firstIndex(of: 0x0A) {
+            let packet = Data(buffer[..<newlineIndex])
+            buffer.removeSubrange(...newlineIndex)
+            guard !packet.isEmpty else { continue }
+            guard let message = try? decoder.decode(AppToTestMessage.self, from: packet) else {
+                print("Failed to decode AppToTestMessage packet")
+                continue
+            }
+            continuation.yield(message)
+        }
+
+        receiveBuffers[connectionID] = buffer
+    }
+
+    private func cleanupConnection(_ connection: NWConnection, id: ObjectIdentifier) {
+        connection.cancel()
+        receiveBuffers.removeValue(forKey: id)
+        connections.removeAll { $0 === connection }
     }
 }

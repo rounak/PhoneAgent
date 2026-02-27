@@ -15,10 +15,13 @@ Example prompts:
 
 # How to run
 
-- Clone the repo
-- Open the Xcode project
-- Open PhoneAgentUITests.swift and run the testLoop function
-- Paste your OpenAI API key, and input your command (text or voice)
+1. Clone the repo and open `PhoneAgent.xcodeproj` in Xcode.
+2. Pick an iOS Simulator or connected iPhone as the run destination.
+3. Open `PhoneAgentUITests/PhoneAgentUITests.swift`.
+4. Run the `testLoop` UI test from the gutter, or run Product > Test.
+5. In the app UI, paste your OpenAI API key and submit a text or voice prompt.
+
+If you saw older instructions referencing `testMain()`, use `testLoop()` instead.
 
 # Features
 
@@ -54,4 +57,3 @@ The host app communicates with the UI test via a TCP Server to trigger prompts.
 - Recommend running this in an isolated environment
 - The app contents are sent to OpenAI's API
 - The model can get things wrong sometimes
-
