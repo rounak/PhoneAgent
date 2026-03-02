@@ -410,6 +410,9 @@ class AndroidDeviceBridge:
         if method == "stop":
             return {}, True
 
+        if method == "ping":
+            return {"status": "ok", "pong": True}, False
+
         raise RPCError(f"Unsupported command: {method}")
 
 
