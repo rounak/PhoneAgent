@@ -166,3 +166,85 @@ Then start Android bridge with that network serial:
 - Personal project
 - App contents may be sent to OpenAI API when using agent flow
 - Model/tool actions can be incorrect; verify important operations
+
+
+## FAQ
+
+### What is PhoneAgent?
+
+PhoneAgent is an **experimental mobile automation project** that provides AI agents with control over iOS and Android devices. It offers two operating modes: an in-app iPhone agent and an external bridge for Codex/OpenClaw control.
+
+### What devices are supported?
+
+| Platform | Device Type | Requirements |
+|----------|-------------|--------------|
+| iOS | Simulator, Physical iPhone | Xcode, Developer setup |
+| Android | Emulator, Physical device | USB/wireless debugging, adb |
+
+### What can AI agents do with PhoneAgent?
+
+| Action | Description |
+|--------|-------------|
+| `get_tree` | Get UI element hierarchy |
+| `get_screen_image` | Capture screen screenshot |
+| `get_context` | Get current app context |
+| `open_app` | Launch an application |
+| `tap` | Tap at coordinates |
+| `tap_element` | Tap UI element by selector |
+| `enter_text` | Input text into field |
+| `scroll` | Scroll in direction |
+| `swipe` | Swipe gesture |
+| `stop` | Stop automation |
+
+### How does the in-app iPhone agent work?
+
+- SwiftUI app with OpenAI Responses API
+- XCTest runner for UI automation
+- Keychain-stored API key
+- Prompt via keyboard or microphone
+- Optional always-on mode with wake word
+- Notification completion + quick-reply loop
+
+### How do I use PhoneAgent with Codex/OpenClaw?
+
+PhoneAgent provides skill docs for AI agent integration:
+- iOS bridge launcher with localhost forwarding
+- Android bridge launcher with adb auto-discovery
+- Generic RPC CLI (`rpc.py`) for both platforms
+
+### What are the system requirements?
+
+**macOS host:**
+- Xcode (for iOS app/UITest bridge)
+- Python 3
+- Android SDK tools (`adb`) for Android bridge
+
+**Devices:**
+- iOS: Simulator or physical iPhone with Developer setup
+- Android: Emulator or device with USB/wireless debugging
+
+### Is PhoneAgent free?
+
+Yes! PhoneAgent is **free and open source**.
+
+### Where can I see demos?
+
+| Demo | Link |
+|------|------|
+| Self-contained iOS app | [YouTube Shorts](https://www.youtube.com/shorts/4rnv6dN-2Lg) |
+| OpenClaw controlling iPhone | [YouTube Shorts](https://youtube.com/shorts/MMAjh1xqsdM) |
+| OpenClaw controlling Android | [YouTube Shorts](https://www.youtube.com/shorts/gN7ZJtl0byM) |
+| Codex controlling iPhone | [YouTube](https://youtu.be/D44AWOQI74I) |
+
+### How do I contribute?
+
+1. Fork the repo
+2. Create a feature branch
+3. Submit a pull request
+
+### Where can I get help?
+
+| Resource | Link |
+|----------|------|
+| GitHub Issues | [PhoneAgent Issues](https://github.com/rounak/PhoneAgent/issues) |
+| Skill Docs | See repository for Codex/OpenClaw skill documentation |
