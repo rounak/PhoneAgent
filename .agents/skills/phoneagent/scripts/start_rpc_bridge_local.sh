@@ -14,6 +14,8 @@ What this does:
 
 Requirements (physical device):
   - python3
+  - An Apple Development signing certificate. Set PHONEAGENT_DEVELOPMENT_TEAM when
+    certificates from multiple teams are installed.
   - (USB only) pip package: pymobiledevice3 (install into repo-root ./.venv)
 
 Interactive selection:
@@ -47,19 +49,12 @@ pick_destination_interactive() {
   while IFS= read -r line; do
     case "$line" in
       "== Devices ==") in_devices=1; in_sims=0; continue;;
+      "== Devices Offline ==") in_devices=0; in_sims=0; continue;;
       "== Simulators ==") in_devices=0; in_sims=1; continue;;
     esac
 
     [[ -z "$line" ]] && continue
     if (( !in_devices && !in_sims )); then
-      continue
-    fi
-
-    # Skip the host Mac entry and any non-iOS-ish entries to avoid invalid destinations.
-    if (( in_devices )) && [[ "$line" == Mac* ]]; then
-      continue
-    fi
-    if [[ "$line" != *iPhone* && "$line" != *iPad* && "$line" != *iPod* && "$line" != *Simulator* ]]; then
       continue
     fi
 
@@ -159,6 +154,32 @@ raise SystemExit(1)
 PY
 }
 
+resolve_development_team() {
+  if [[ -n "${PHONEAGENT_DEVELOPMENT_TEAM:-}" ]]; then
+    printf '%s\n' "$PHONEAGENT_DEVELOPMENT_TEAM"
+    return
+  fi
+
+  local -a teams=()
+  local team
+  while IFS= read -r team; do
+    [[ -n "$team" ]] && teams+=("$team")
+  done < <(
+    security find-certificate -a -c "Apple Development" -p 2>/dev/null |
+      openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null |
+      openssl pkcs7 -print_certs -noout 2>/dev/null |
+      sed -nE 's/.*OU[[:space:]]*=[[:space:]]*([A-Z0-9]{10}).*/\1/p' |
+      sort -u || true
+  )
+
+  if ((${#teams[@]} != 1)); then
+    echo "Expected one Apple Development signing team; found ${#teams[@]}. Set PHONEAGENT_DEVELOPMENT_TEAM explicitly." >&2
+    return 1
+  fi
+
+  printf '%s\n' "${teams[0]}"
+}
+
 FORWARD_PID=""
 cleanup() {
   if [[ -n "${FORWARD_PID:-}" ]]; then
@@ -171,6 +192,12 @@ trap cleanup EXIT INT TERM
 IS_SIMULATOR=0
 if is_simulator_udid >/dev/null 2>&1; then
   IS_SIMULATOR=1
+fi
+
+DEVELOPMENT_TEAM=""
+if ((!IS_SIMULATOR)); then
+  DEVELOPMENT_TEAM="$(resolve_development_team)"
+  echo "Using Apple Development team: $DEVELOPMENT_TEAM" >&2
 fi
 
 if ((IS_SIMULATOR)); then
@@ -193,6 +220,8 @@ XCODEBUILD_CODESIGN_ARGS=()
 if ((IS_SIMULATOR)); then
   # Simulator builds don't need signing; disabling it avoids requiring a configured signing identity.
   XCODEBUILD_CODESIGN_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
+else
+  XCODEBUILD_CODESIGN_ARGS=("DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM" -allowProvisioningUpdates)
 fi
 
 XCODEBUILD_ARGS=(
