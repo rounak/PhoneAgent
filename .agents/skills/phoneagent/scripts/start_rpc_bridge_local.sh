@@ -42,19 +42,56 @@ pick_destination_interactive() {
 
   local -a labels
   local -a ids
-  local in_devices=0
   local in_sims=0
-  local line id label kind
+  local line id label
+
+  while IFS=$'\t' read -r label id; do
+    [[ -n "$label" && -n "$id" ]] || continue
+    labels+=("$label [device]")
+    ids+=("$id")
+  done < <(python3 - <<'PY'
+import json
+import subprocess
+import sys
+
+try:
+    output = subprocess.check_output(
+        ["xcrun", "xcdevice", "list", "--timeout", "12"],
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    devices = json.loads(output)
+except (json.JSONDecodeError, OSError, subprocess.CalledProcessError) as error:
+    print(f"Unable to list available physical iOS devices: {error}", file=sys.stderr)
+    raise SystemExit(0)
+
+for device in devices:
+    if (
+        device.get("simulator")
+        or not device.get("available")
+        or device.get("platform") != "com.apple.platform.iphoneos"
+    ):
+        continue
+
+    name = device.get("name")
+    identifier = device.get("identifier")
+    if not name or not identifier:
+        continue
+
+    version = str(device.get("operatingSystemVersion", "")).split(" ", 1)[0]
+    label = f"{name} ({version})" if version else name
+    print(f"{label}\t{identifier}")
+PY
+)
 
   while IFS= read -r line; do
     case "$line" in
-      "== Devices ==") in_devices=1; in_sims=0; continue;;
-      "== Devices Offline ==") in_devices=0; in_sims=0; continue;;
-      "== Simulators ==") in_devices=0; in_sims=1; continue;;
+      "== Devices =="|"== Devices Offline ==") in_sims=0; continue;;
+      "== Simulators ==") in_sims=1; continue;;
     esac
 
     [[ -z "$line" ]] && continue
-    if (( !in_devices && !in_sims )); then
+    if (( !in_sims )); then
       continue
     fi
 
@@ -67,17 +104,12 @@ pick_destination_interactive() {
     else
       continue
     fi
-    kind="device"
-    if (( in_sims )); then
-      kind="sim"
-    fi
-
-    labels+=("$label [$kind]")
+    labels+=("$label [sim]")
     ids+=("$id")
   done <<<"$raw"
 
   if ((${#ids[@]} == 0)); then
-    echo "No iOS devices/simulators found in: xcrun xctrace list devices" >&2
+    echo "No available physical iOS devices or simulators found." >&2
     exit 1
   fi
 
