@@ -21,11 +21,13 @@ Requirements (physical device):
 Interactive selection:
   - This script is intentionally interactive. It will list iOS devices and simulators
     and prompt you to pick one by number.
+  - Set PHONEAGENT_DEVICE_DISCOVERY_TIMEOUT to allow extra time for network devices.
 USAGE
 }
 
 UDID=""
 RPC_PORT="45678"
+IS_SIMULATOR=0
 
 pick_destination_interactive() {
   if [[ ! -e /dev/tty ]]; then
@@ -33,51 +35,88 @@ pick_destination_interactive() {
     exit 1
   fi
 
-  local raw
-  raw="$(xcrun xctrace list devices 2>/dev/null || true)"
-  if [[ -z "$raw" ]]; then
-    echo "Failed to list devices via: xcrun xctrace list devices" >&2
+  local destinations
+  if ! destinations="$(python3 - <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+try:
+    timeout = int(os.environ.get("PHONEAGENT_DEVICE_DISCOVERY_TIMEOUT", "5"))
+    if timeout < 1:
+        raise ValueError("PHONEAGENT_DEVICE_DISCOVERY_TIMEOUT must be at least 1")
+
+    output = subprocess.check_output(
+        ["xcrun", "xcdevice", "list", "--timeout", str(timeout)],
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout + 5,
+    )
+    devices = json.loads(output)
+    if not isinstance(devices, list):
+        raise ValueError("xcdevice returned an unexpected device list")
+except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError) as error:
+    detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) and error.stderr else str(error)
+    print(f"Unable to list available iOS devices and simulators: {detail}", file=sys.stderr)
+    raise SystemExit(1)
+
+physical_devices = []
+simulators = []
+seen_identifiers = set()
+
+for device in devices:
+    if not isinstance(device, dict) or device.get("available") is not True:
+        continue
+
+    platform = device.get("platform")
+    is_simulator = device.get("simulator")
+    if platform == "com.apple.platform.iphoneos" and is_simulator is False:
+        destinations = physical_devices
+        kind = "device"
+    elif platform == "com.apple.platform.iphonesimulator" and is_simulator is True:
+        destinations = simulators
+        kind = "sim"
+    else:
+        continue
+
+    name = device.get("name")
+    identifier = device.get("identifier")
+    if not isinstance(name, str) or not isinstance(identifier, str) or not name or not identifier:
+        continue
+
+    normalized_identifier = identifier.lower()
+    if normalized_identifier in seen_identifiers or any(character.isspace() for character in identifier):
+        continue
+    seen_identifiers.add(normalized_identifier)
+
+    display_name = "".join(character if character.isprintable() else " " for character in name)
+    version = device.get("operatingSystemVersion")
+    version = version.split(" ", 1)[0] if isinstance(version, str) and version else ""
+    label = f"{display_name} ({version})" if version else display_name
+    destinations.append((identifier, kind, label))
+
+for identifier, kind, label in physical_devices + simulators:
+    print(f"{identifier}\t{kind}\t{label}")
+PY
+)"; then
     exit 1
   fi
 
   local -a labels
   local -a ids
-  local in_devices=0
-  local in_sims=0
-  local line id label kind
+  local -a kinds
+  local id kind label
 
-  while IFS= read -r line; do
-    case "$line" in
-      "== Devices ==") in_devices=1; in_sims=0; continue;;
-      "== Devices Offline ==") in_devices=0; in_sims=0; continue;;
-      "== Simulators ==") in_devices=0; in_sims=1; continue;;
-    esac
-
-    [[ -z "$line" ]] && continue
-    if (( !in_devices && !in_sims )); then
-      continue
-    fi
-
-    # xctrace lines can contain multiple (...) groups (e.g. device + OS + id).
-    # Capture the final (...) token as the id and keep the preceding text as display label.
-    line="${line%$'\r'}"
-    if [[ "$line" =~ ^(.*)[[:space:]]\(([^()]*)\)[[:space:]]*$ ]]; then
-      label="${BASH_REMATCH[1]}"
-      id="${BASH_REMATCH[2]}"
-    else
-      continue
-    fi
-    kind="device"
-    if (( in_sims )); then
-      kind="sim"
-    fi
-
+  while IFS=$'\t' read -r id kind label; do
+    [[ -n "$id" && -n "$kind" && -n "$label" ]] || continue
     labels+=("$label [$kind]")
     ids+=("$id")
-  done <<<"$raw"
+    kinds+=("$kind")
+  done <<<"$destinations"
 
   if ((${#ids[@]} == 0)); then
-    echo "No iOS devices/simulators found in: xcrun xctrace list devices" >&2
+    echo "No available physical iOS devices or simulators found." >&2
     exit 1
   fi
 
@@ -99,6 +138,9 @@ pick_destination_interactive() {
 
     if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#ids[@]} )); then
       UDID="${ids[$((choice - 1))]}"
+      if [[ "${kinds[$((choice - 1))]}" == "sim" ]]; then
+        IS_SIMULATOR=1
+      fi
       break
     fi
   done
@@ -136,24 +178,6 @@ if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
   PYTHON="$REPO_ROOT/.venv/bin/python"
 fi
 
-is_simulator_udid() {
-  "$PYTHON" - "$UDID" <<'PY'
-import json
-import subprocess
-import sys
-
-udid = sys.argv[1].lower()
-raw = subprocess.check_output(["xcrun", "simctl", "list", "devices", "-j"])
-data = json.loads(raw)
-for _, devices in (data.get("devices") or {}).items():
-    for d in devices or []:
-        if str(d.get("udid", "")).lower() == udid:
-            print("simulator")
-            raise SystemExit(0)
-raise SystemExit(1)
-PY
-}
-
 resolve_development_team() {
   if [[ -n "${PHONEAGENT_DEVELOPMENT_TEAM:-}" ]]; then
     printf '%s\n' "$PHONEAGENT_DEVELOPMENT_TEAM"
@@ -187,12 +211,6 @@ cleanup() {
   fi
 }
 trap cleanup EXIT INT TERM
-
-# Cache simulator check; calling it twice is slow and hits xcrun each time.
-IS_SIMULATOR=0
-if is_simulator_udid >/dev/null 2>&1; then
-  IS_SIMULATOR=1
-fi
 
 DEVELOPMENT_TEAM=""
 if ((!IS_SIMULATOR)); then
